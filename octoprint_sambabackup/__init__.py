@@ -34,7 +34,6 @@ class SMBbackupPlugin(octoprint.plugin.SettingsPlugin,
 			smb_username="",
 			smb_password="",
 			smb_path="",
-			local_backup_path="/home/pi/.octoprint/data/backup/",
 			smb_backup_limit=0  # 0 = neomezeno
 		)
 
@@ -88,13 +87,12 @@ class SMBbackupPlugin(octoprint.plugin.SettingsPlugin,
 				import re
 				filename = re.sub(r"((-[0-9]+)+\.zip$)", ".zip", filename)
 			# Lokální kopie
-			local_backup_path = self._settings.get(["local_backup_path"])
+			local_backup_path = "/home/pi/.octoprint/data/backup/"
 			local_copy_path = None
-			if local_backup_path:
-				import shutil, os
-				os.makedirs(local_backup_path, exist_ok=True)
-				local_copy_path = os.path.join(local_backup_path, filename)
-				shutil.copy2(payload["path"], local_copy_path)
+			import shutil, os
+			os.makedirs(local_backup_path, exist_ok=True)
+			local_copy_path = os.path.join(local_backup_path, filename)
+			shutil.copy2(payload["path"], local_copy_path)
 			# SMB kopie
 			try:
 				server = self._settings.get(["smb_server"])
