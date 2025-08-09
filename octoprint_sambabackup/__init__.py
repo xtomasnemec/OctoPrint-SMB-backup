@@ -34,18 +34,43 @@ class SMBbackupPlugin(octoprint.plugin.SettingsPlugin,
 			smb_username="",
 			smb_password="",
 			smb_path="",
-			local_backup_path="",
+			local_backup_path="/home/pi/.octoprint/data/backup/",
 			smb_backup_limit=0  # 0 = neomezeno
 		)
 
 	##~~ SimpleApiPlugin mixin
 
 	def get_api_commands(self):
-		return dict()
+		return dict(test_connection=[])
 
 	def on_api_command(self, command, data):
-		# API commands nejsou potřeba pro SMB
-		pass
+		if command == "test_connection":
+			try:
+				server = self._settings.get(["smb_server"])
+				share = self._settings.get(["smb_share"])
+				username = self._settings.get(["smb_username"])
+				password = self._settings.get(["smb_password"])
+				smb_path = self._settings.get(["smb_path"])
+				if not (server and share and username and password and smb_path):
+					return dict(result=False, error="Please fill in all SMB fields.")
+				conn = Connection(uuid=os.urandom(16), server=server, port=445)
+				conn.connect()
+				session = Session(conn, username, password)
+				session.connect()
+				tree = TreeConnect(session, f"//{server}/{share}")
+				tree.connect()
+				# Try to open the directory
+				dir_open = Open(tree, smb_path.rstrip("/"), access_mask=0x12019f)
+				dir_open.create()
+				dir_open.close()
+				tree.disconnect()
+				session.disconnect()
+				conn.disconnect()
+				return dict(result=True)
+			except Exception as e:
+				return dict(result=False, error=str(e))
+		# fallback for unknown commands
+		return dict(result=False, error="Unknown command")
 
 	##~~ AssetPlugin mixin
 
