@@ -48,4 +48,37 @@
             <label class="checkbox">{{ _('Strip timestamp from file name.') }}<input type="checkbox" data-bind="checked: settingsViewModel.settings.plugins.smbbackup.strip_timestamp" /></label>
         </div>
     </div>
+    <div class="control-group">
+        <div class="controls">
+            <button type="button" class="btn" id="smb-test-connection">Test Connection</button>
+            <span id="smb-test-connection-result" style="margin-left:10px;"></span>
+        </div>
+    </div>
 </form>
+<script type="text/javascript">
+$(function() {
+    $("#smb-test-connection").click(function() {
+        var $btn = $(this);
+        var $result = $("#smb-test-connection-result");
+        $btn.prop("disabled", true);
+        $result.text("Testing...");
+        $.ajax({
+            url: "/api/plugin/sambabackup",
+            type: "POST",
+            dataType: "json",
+            data: JSON.stringify({command: "test_connection"}),
+            contentType: "application/json; charset=UTF-8"
+        }).done(function(resp) {
+            if (resp.result) {
+                $result.text("Connection successful!").css("color", "green");
+            } else {
+                $result.text("Failed: " + (resp.error || "Unknown error")).css("color", "red");
+            }
+        }).fail(function(xhr) {
+            $result.text("Failed: " + xhr.statusText).css("color", "red");
+        }).always(function() {
+            $btn.prop("disabled", false);
+        });
+    });
+});
+</script>
