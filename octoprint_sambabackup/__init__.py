@@ -21,6 +21,10 @@ class SMBbackupPlugin(octoprint.plugin.SettingsPlugin,
 	def __init__(self):
 		super().__init__()
 
+	def get_settings_template(self):
+		# Register the correct settings template for the plugin settings UI
+		return "sambabackup_settings.jinja2"
+
 	def get_settings_defaults(self):
 		return dict(
 			installed_version=self._plugin_version,
