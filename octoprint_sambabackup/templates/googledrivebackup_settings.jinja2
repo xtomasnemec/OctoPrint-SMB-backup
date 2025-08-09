@@ -1,0 +1,51 @@
+    <div class="control-group">
+        <label class="control-label">SMB backup limit</label>
+        <div class="controls">
+            <input class="input-block-level" type="number" min="0" data-bind="value: settingsViewModel.settings.plugins.smbbackup.smb_backup_limit" placeholder="0 = unlimited" />
+        </div>
+    </div>
+<h3>{{ _('SMB Backup') }} <small>{{ _('Version') }}: <span data-bind="text: settingsViewModel.settings.plugins.smbbackup.installed_version"></span></small></h3>
+<div class="alert"><small>This plugin will upload backups to an SMB share.</small></div>
+<form class="form-horizontal">
+    <div class="control-group">
+        <label class="control-label">Local backup path</label>
+        <div class="controls">
+            <input class="input-block-level" type="text" data-bind="value: settingsViewModel.settings.plugins.smbbackup.local_backup_path" placeholder="e.g. /home/pi/octoprint-backups" />
+        </div>
+    </div>
+    <div class="control-group">
+        <label class="control-label">SMB Server</label>
+        <div class="controls">
+            <input class="input-block-level" type="text" data-bind="value: settingsViewModel.settings.plugins.smbbackup.smb_server" placeholder="e.g. 192.168.1.10" />
+        </div>
+    </div>
+    <div class="control-group">
+        <label class="control-label">SMB Share</label>
+        <div class="controls">
+            <input class="input-block-level" type="text" data-bind="value: settingsViewModel.settings.plugins.smbbackup.smb_share" placeholder="e.g. backups" />
+        </div>
+    </div>
+    <div class="control-group">
+        <label class="control-label">SMB Username</label>
+        <div class="controls">
+            <input class="input-block-level" type="text" data-bind="value: settingsViewModel.settings.plugins.smbbackup.smb_username" />
+        </div>
+    </div>
+    <div class="control-group">
+        <label class="control-label">SMB Password</label>
+        <div class="controls">
+            <input class="input-block-level" type="password" data-bind="value: settingsViewModel.settings.plugins.smbbackup.smb_password" />
+        </div>
+    </div>
+    <div class="control-group">
+        <label class="control-label">SMB Path (on share)</label>
+        <div class="controls">
+            <input class="input-block-level" type="text" data-bind="value: settingsViewModel.settings.plugins.smbbackup.smb_path" placeholder="e.g. /octoprint" />
+        </div>
+    </div>
+    <div class="control-group">
+        <div class="controls">
+            <label class="checkbox">{{ _('Strip timestamp from file name.') }}<input type="checkbox" data-bind="checked: settingsViewModel.settings.plugins.smbbackup.strip_timestamp" /></label>
+        </div>
+    </div>
+</form>

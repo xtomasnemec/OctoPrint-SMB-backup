@@ -10,4 +10,4 @@
 
 setuptools
 OctoPrint
-PyDrive2
+smbprotocol
