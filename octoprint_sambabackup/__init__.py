@@ -46,11 +46,8 @@ class SMBbackupPlugin(octoprint.plugin.SettingsPlugin,
 	##~~ AssetPlugin mixin
 
 	def get_assets(self):
-		# Define your plugin's asset files to automatically include in the
-		# core UI here.
-		return dict(
-			js=["js/googledrivebackup.js"]
-		)
+		# Plugin nemá žádné JS assety
+		return dict()
 
 	##~~ EventHandlerPlugin mixin
 

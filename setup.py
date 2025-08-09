@@ -33,7 +33,7 @@ plugin_url = "https://github.com/xtomasnemec/OctoPrint-SMB-Backup"
 plugin_license = "MIT"
 
 # Any additional requirements besides OctoPrint should be listed here
-plugin_requires = ["cryptography>=38.0.0,<40", "pydrive2"]
+plugin_requires = ["cryptography>=38.0.0,<40", "smbprotocol"]
 
 ### --------------------------------------------------------------------------------------------------------------------
 ### More advanced options that you usually shouldn't have to touch follow after this point
