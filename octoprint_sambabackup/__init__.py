@@ -2,19 +2,14 @@
 from __future__ import absolute_import
 
 import octoprint.plugin
-
-
 import os
-from smbprotocol.connection import Connection
-from smbprotocol.session import Session
-from smbprotocol.tree import TreeConnect
-from smbprotocol.open import Open, CreateDisposition, FileAttributes
 
 class SMBbackupPlugin(octoprint.plugin.SettingsPlugin,
 					 octoprint.plugin.AssetPlugin,
 					 octoprint.plugin.TemplatePlugin,
 					 octoprint.plugin.EventHandlerPlugin,
-					 octoprint.plugin.SimpleApiPlugin):
+					 octoprint.plugin.SimpleApiPlugin,
+					 octoprint.plugin.BlueprintPlugin):
 
 	##~~ SettingsPlugin mixin
 
@@ -24,6 +19,11 @@ class SMBbackupPlugin(octoprint.plugin.SettingsPlugin,
 	def get_settings_template(self):
 		# Register the correct settings template for the plugin settings UI
 		return "sambabackup_settings.jinja2"
+	
+	def get_template_configs(self):
+		return [
+			dict(type="settings", template="sambabackup_settings.jinja2")
+		]
 
 	def get_settings_defaults(self):
 		return dict(
@@ -34,42 +34,116 @@ class SMBbackupPlugin(octoprint.plugin.SettingsPlugin,
 			smb_username="",
 			smb_password="",
 			smb_path="",
-			smb_backup_limit=0  # 0 = neomezeno
+			smb_backup_limit=0,  # 0 = neomezeno
+			delete_local_after_smb=False
 		)
 
 	##~~ SimpleApiPlugin mixin
 
 	def get_api_commands(self):
-		return dict(test_connection=[])
+		return dict(test_connection=[], download_all_backups=[])
 
 	def on_api_command(self, command, data):
+		self._logger.info(f"[SMBbackup] API command received: {command}, data: {data}")
 		if command == "test_connection":
 			try:
+				import subprocess
+				import tempfile
 				server = self._settings.get(["smb_server"])
 				share = self._settings.get(["smb_share"])
 				username = self._settings.get(["smb_username"])
 				password = self._settings.get(["smb_password"])
 				smb_path = self._settings.get(["smb_path"])
 				if not (server and share and username and password and smb_path):
+					self._logger.warning("[SMBbackup] Test connection failed: missing SMB fields.")
 					return dict(result=False, error="Please fill in all SMB fields.")
-				conn = Connection(uuid=os.urandom(16), server=server, port=445)
-				conn.connect()
-				session = Session(conn, username, password)
-				session.connect()
-				tree = TreeConnect(session, f"//{server}/{share}")
-				tree.connect()
-				# Try to open the directory
-				dir_open = Open(tree, smb_path.rstrip("/"), access_mask=0x12019f)
-				dir_open.create()
-				dir_open.close()
-				tree.disconnect()
-				session.disconnect()
-				conn.disconnect()
-				return dict(result=True)
+				self._logger.info(f"[SMBbackup] Testing SMB connection to //{server}/{share}{smb_path} as {username}")
+				
+				# Testujeme připojení pomocí smbclient
+				result = subprocess.run([
+					"smbclient", f"//{server}/{share}", password, "-U", username, "-c", f"cd {smb_path}; quit"
+				], capture_output=True, text=True)
+				
+				if result.returncode == 0:
+					self._logger.info("[SMBbackup] Test connection successful.")
+					return dict(result=True)
+				else:
+					self._logger.error(f"[SMBbackup] Test connection failed: {result.stderr}")
+					return dict(result=False, error=result.stderr)
 			except Exception as e:
+				self._logger.error(f"[SMBbackup] Test connection failed: {e}")
 				return dict(result=False, error=str(e))
-		# fallback for unknown commands
-		return dict(result=False, error="Unknown command")
+		elif command == "download_all_backups":
+			self._logger.info("[SMBbackup] API: Download all backups requested.")
+			# Return a URL to download the zip file
+			from flask import url_for
+			return dict(result=True, url=url_for("plugin.sambabackup_download_all_backups"))
+	##~~ Blueprint route for downloading all backups as zip
+	def get_blueprint(self):
+		from flask import Blueprint, send_file, make_response
+		import io, zipfile
+		blueprint = Blueprint(
+			"sambabackup",
+			__name__,
+			template_folder="templates"
+		)
+
+		@blueprint.route("/download_all_backups.zip", methods=["GET"])
+		def download_all_backups():
+			self._logger.info("[SMBbackup] Blueprint: Download all backups endpoint called.")
+			try:
+				import subprocess
+				import tempfile
+				import os
+				
+				server = self._settings.get(["smb_server"])
+				share = self._settings.get(["smb_share"])
+				username = self._settings.get(["smb_username"])
+				password = self._settings.get(["smb_password"])
+				smb_path = self._settings.get(["smb_path"])
+				if not (server and share and username and password and smb_path):
+					self._logger.warning("[SMBbackup] Download all backups: SMB settings incomplete.")
+					return make_response("SMB settings incomplete", 400)
+				
+				# Vytvoření dočasného adresáře pro stažené soubory
+				temp_dir = tempfile.mkdtemp()
+				self._logger.info(f"[SMBbackup] Dočasný adresář pro download: {temp_dir}")
+				
+				# Spuštění download skriptu
+				script_path = "/home/pi/smb_download.sh"
+				args = ["/bin/bash", script_path, server, share, username, password, smb_path, temp_dir]
+				result = subprocess.run(args, capture_output=True, text=True)
+				
+				self._logger.info(f"[SMBbackup] Download skript stdout: {result.stdout}")
+				if result.stderr:
+					self._logger.warning(f"[SMBbackup] Download skript stderr: {result.stderr}")
+				
+				if result.returncode != 0:
+					self._logger.error(f"[SMBbackup] Download skript selhal s kódem {result.returncode}")
+					return make_response("Download script failed", 500)
+				
+				# Vytvoření ZIP z stažených souborů
+				import zipfile
+				import io
+				mem_zip = io.BytesIO()
+				with zipfile.ZipFile(mem_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+					for filename in os.listdir(temp_dir):
+						if filename.endswith('.zip'):
+							file_path = os.path.join(temp_dir, filename)
+							zf.write(file_path, filename)
+				
+				# Smazání dočasného adresáře
+				import shutil
+				shutil.rmtree(temp_dir)
+				
+				mem_zip.seek(0)
+				self._logger.info("[SMBbackup] Vytvoření ZIP archivu dokončeno.")
+				return send_file(mem_zip, mimetype="application/zip", as_attachment=True, download_name="smb_backups.zip")
+			except Exception as e:
+				self._logger.error(f"[SMBbackup] Download all backups failed: {e}")
+				return make_response(f"Failed to download backups: {e}", 500)
+		
+		return blueprint
 
 	##~~ AssetPlugin mixin
 
@@ -80,72 +154,61 @@ class SMBbackupPlugin(octoprint.plugin.SettingsPlugin,
 	##~~ EventHandlerPlugin mixin
 
 	def on_event(self, event, payload):
+		self._logger.info(f"[SMBbackup] Event received: {event}, payload: {payload}")
 		if event == "plugin_backup_backup_created":
-			self._logger.info("{} created, will now attempt to upload to SMB share and/or local path".format(payload["path"]))
-			filename = payload["name"]
-			if self._settings.get_boolean(["strip_timestamp"]):
-				import re
-				filename = re.sub(r"((-[0-9]+)+\.zip$)", ".zip", filename)
-			# Lokální kopie
-			local_backup_path = "/home/pi/.octoprint/data/backup/"
-			local_copy_path = None
-			import shutil, os
-			os.makedirs(local_backup_path, exist_ok=True)
-			local_copy_path = os.path.join(local_backup_path, filename)
-			shutil.copy2(payload["path"], local_copy_path)
-			# SMB kopie
 			try:
+				self._logger.info(f"[SMBbackup] Backup created: {payload['path']}, name: {payload['name']}")
+				filename = payload["name"]
+				if self._settings.get_boolean(["strip_timestamp"]):
+					import re
+					filename = re.sub(r"((-[0-9]+)+\.zip$)", ".zip", filename)
+					self._logger.info(f"[SMBbackup] Stripped timestamp, new filename: {filename}")
+				# Lokální kopie
+				local_backup_path = "/home/pi/.octoprint/data/backup/"
+				local_copy_path = os.path.join(local_backup_path, filename)
+				import os, shutil
+				if os.path.abspath(payload["path"]) != os.path.abspath(local_copy_path):
+					os.makedirs(local_backup_path, exist_ok=True)
+					shutil.copy2(payload["path"], local_copy_path)
+					self._logger.info(f"[SMBbackup] Local backup copied to: {local_copy_path}")
+				else:
+					self._logger.info(f"[SMBbackup] Local backup already in destination: {local_copy_path}")
+				# SMB upload přes shell skript
+				import subprocess
 				server = self._settings.get(["smb_server"])
 				share = self._settings.get(["smb_share"])
 				username = self._settings.get(["smb_username"])
 				password = self._settings.get(["smb_password"])
 				smb_path = self._settings.get(["smb_path"])
-				backup_limit = int(self._settings.get(["smb_backup_limit"]) or 0)
-				if server and share and username and password and smb_path:
-					conn = Connection(uuid=os.urandom(16), server=server, port=445)
-					conn.connect()
-					session = Session(conn, username, password)
-					session.connect()
-					tree = TreeConnect(session, f"//{server}/{share}")
-					tree.connect()
-					remote_path = smb_path.rstrip("/") + "/" + filename
-					with open(payload["path"], "rb") as local_file:
-						file = Open(tree, remote_path, access_mask=0x12019f, disposition=CreateDisposition.FILE_OVERWRITE_IF, attributes=FileAttributes.FILE_ATTRIBUTE_NORMAL)
-						file.create()
-						file.write(local_file.read(), 0)
-						file.close()
-					# Smazání lokální kopie po úspěšném uploadu
-					if local_copy_path:
-						import os
-						try:
-							os.remove(local_copy_path)
-						except Exception as e:
-							self._logger.warning(f"Could not remove local backup: {e}")
-					# Limit počtu záloh na SMB
-					if backup_limit > 0:
-						from smbprotocol.file_info import FileInformationClass
-						from smbprotocol.open import Open
-						from smbprotocol.query_directory import QueryDirectoryFlags
-						dir_open = Open(tree, smb_path.rstrip("/"), access_mask=0x12019f)
-						dir_open.create()
-						files = dir_open.query_directory("*.zip", FileInformationClass.FILE_DIRECTORY_INFORMATION, flags=QueryDirectoryFlags.SL_RESTART_SCAN)
-						# Seřadit podle času vytvoření (nejstarší první)
-						files = sorted([f for f in files if not f['file_name'].startswith('.')], key=lambda x: x['creation_time'])
-						if len(files) > backup_limit:
-							for f in files[:-backup_limit]:
-								try:
-									old_file = Open(tree, smb_path.rstrip("/") + "/" + f['file_name'], access_mask=0x10000)
-									old_file.create()
-									old_file.delete()
-									old_file.close()
-								except Exception as e:
-									self._logger.warning(f"Could not delete old backup {f['file_name']}: {e}")
-						dir_open.close()
-					tree.disconnect()
-					session.disconnect()
-					conn.disconnect()
+				local_backup_dir = "/home/pi/.octoprint/data/backup"  # nebo použijte proměnnou pokud je nastavitelná
+				
+				# Volba skriptu podle nastavení delete_local_after_smb
+				if self._settings.get_boolean(["delete_local_after_smb"]):
+					script_path = "/home/pi/smb_upload_delete.sh"
+					self._logger.info(f"[SMBbackup] Použití skriptu s automatickým mazáním: {script_path}")
+				else:
+					script_path = "/home/pi/smb_upload.sh"
+					self._logger.info(f"[SMBbackup] Použití běžného upload skriptu: {script_path}")
+				
+				try:
+					self._logger.info(f"[SMBbackup] Spouštím upload přes shell skript: {script_path}")
+					args = ["/bin/bash", script_path, server, share, username, password, smb_path, local_backup_dir]
+					result = subprocess.run(args, capture_output=True, text=True)
+					self._logger.info(f"[SMBbackup] SMB upload skript stdout: {result.stdout}")
+					if result.stderr:
+						self._logger.warning(f"[SMBbackup] SMB upload skript stderr: {result.stderr}")
+					if result.returncode == 0:
+						self._logger.info(f"[SMBbackup] SMB upload skript dokončen úspěšně.")
+						# Pokud nepoužíváme delete skript, můžeme smazat lokální kopii zde
+						if not self._settings.get_boolean(["delete_local_after_smb"]) and self._settings.get_boolean(["delete_local_after_smb"]):
+							# Tato logika je redundantní, protože delete skript to už udělá
+							pass
+					else:
+						self._logger.error(f"[SMBbackup] SMB upload skript selhal s kódem {result.returncode}")
+				except Exception as e:
+					self._logger.error(f"[SMBbackup] Chyba při spouštění SMB upload skriptu: {e}")
 			except Exception as e:
-				self._plugin_manager.send_plugin_message(self._identifier, {"error": str(e)})
+				self._logger.error(f"[SMBbackup] Backup event handling failed: {e}")
 
 	# Funkce create_remote_folder již není potřeba
 

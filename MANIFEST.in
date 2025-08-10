@@ -1,4 +1,5 @@
 include README.md
-recursive-include octoprint_googledrivebackup/templates *
-recursive-include octoprint_googledrivebackup/translations *
-recursive-include octoprint_googledrivebackup/static *
+include *.sh
+recursive-include octoprint_sambabackup/templates *
+recursive-include octoprint_sambabackup/translations *
+recursive-include octoprint_sambabackup/static *

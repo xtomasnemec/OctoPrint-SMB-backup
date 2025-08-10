@@ -1,61 +1,73 @@
-    <div class="control-group">
-        <label class="control-label">SMB backup limit</label>
-        <div class="controls">
-            <input class="input-block-level" type="number" min="0" data-bind="value: settingsViewModel.settings.plugins.smbbackup.smb_backup_limit" placeholder="0 = unlimited" />
-        </div>
-    </div>
-<h3>{{ _('SMB Backup') }} <small>{{ _('Version') }}: <span data-bind="text: settingsViewModel.settings.plugins.smbbackup.installed_version"></span></small></h3>
+<h3>{{ _('SMB Backup') }} <small>{{ _('Version') }}: <span data-bind="text: settingsViewModel.settings.plugins.sambabackup.installed_version"></span></small></h3>
 <div class="alert"><small>This plugin will upload backups to an SMB share.</small></div>
 <form class="form-horizontal">
     <div class="control-group">
         <label class="control-label">SMB Server</label>
         <div class="controls">
-            <input class="input-block-level" type="text" data-bind="value: settingsViewModel.settings.plugins.smbbackup.smb_server" placeholder="e.g. 192.168.1.10" />
+            <input class="input-block-level" type="text" data-bind="value: settingsViewModel.settings.plugins.sambabackup.smb_server" placeholder="e.g. 192.168.1.10" />
         </div>
     </div>
     <div class="control-group">
         <label class="control-label">SMB Share</label>
         <div class="controls">
-            <input class="input-block-level" type="text" data-bind="value: settingsViewModel.settings.plugins.smbbackup.smb_share" placeholder="e.g. backups" />
+            <input class="input-block-level" type="text" data-bind="value: settingsViewModel.settings.plugins.sambabackup.smb_share" placeholder="e.g. backups" />
         </div>
     </div>
     <div class="control-group">
         <label class="control-label">SMB Username</label>
         <div class="controls">
-            <input class="input-block-level" type="text" data-bind="value: settingsViewModel.settings.plugins.smbbackup.smb_username" />
+            <input class="input-block-level" type="text" data-bind="value: settingsViewModel.settings.plugins.sambabackup.smb_username" />
         </div>
     </div>
     <div class="control-group">
         <label class="control-label">SMB Password</label>
         <div class="controls">
-            <input class="input-block-level" type="password" data-bind="value: settingsViewModel.settings.plugins.smbbackup.smb_password" />
+            <input class="input-block-level" type="password" data-bind="value: settingsViewModel.settings.plugins.sambabackup.smb_password" />
         </div>
     </div>
     <div class="control-group">
         <label class="control-label">SMB Path (on share)</label>
         <div class="controls">
-            <input class="input-block-level" type="text" data-bind="value: settingsViewModel.settings.plugins.smbbackup.smb_path" placeholder="e.g. /octoprint" />
+            <input class="input-block-level" type="text" data-bind="value: settingsViewModel.settings.plugins.sambabackup.smb_path" placeholder="e.g. /octoprint" />
+        </div>
+    </div>
+    <div class="control-group">
+        <label class="control-label">SMB backup limit</label>
+        <div class="controls">
+            <input class="input-block-level" type="number" min="0" data-bind="value: settingsViewModel.settings.plugins.sambabackup.smb_backup_limit" placeholder="0 = unlimited" />
         </div>
     </div>
     <div class="control-group">
         <div class="controls">
-            <label class="checkbox">{{ _('Strip timestamp from file name.') }}<input type="checkbox" data-bind="checked: settingsViewModel.settings.plugins.smbbackup.strip_timestamp" /></label>
+            <label class="checkbox">
+                <input type="checkbox" data-bind="checked: settingsViewModel.settings.plugins.sambabackup.strip_timestamp" />
+                {{ _('Strip timestamp from file name.') }}
+            </label>
+        </div>
+    </div>
+    <div class="control-group">
+        <div class="controls">
+            <label class="checkbox">
+                <input type="checkbox" data-bind="checked: settingsViewModel.settings.plugins.sambabackup.delete_local_after_smb" />
+                {{ _('Delete local backup after successful SMB upload') }}
+            </label>
         </div>
     </div>
     <div class="control-group">
         <div class="controls">
             <button type="button" class="btn" id="smb-test-connection">Test Connection</button>
-            <span id="smb-test-connection-result" style="margin-left:10px;"></span>
+            <button type="button" class="btn btn-primary" id="smb-download-all-backups" style="margin-left:10px;">Download all backups from SMB</button>
         </div>
     </div>
 </form>
 <script type="text/javascript">
 $(function() {
+    console.log("[SMBBackup] JavaScript loaded");
+    
     $("#smb-test-connection").click(function() {
+        console.log("[SMBBackup] Test connection button clicked");
         var $btn = $(this);
-        var $result = $("#smb-test-connection-result");
         $btn.prop("disabled", true);
-        $result.text("Testing...");
         $.ajax({
             url: "/api/plugin/sambabackup",
             type: "POST",
@@ -63,16 +75,83 @@ $(function() {
             data: JSON.stringify({command: "test_connection"}),
             contentType: "application/json; charset=UTF-8"
         }).done(function(resp) {
+            console.log("[SMBBackup] Test connection response:", resp);
             if (resp.result) {
-                $result.text("Connection successful!").css("color", "green");
+                new PNotify({
+                    title: "SMB Backup",
+                    text: "Connection test successful!",
+                    type: "success",
+                    hide: true
+                });
             } else {
-                $result.text("Failed: " + (resp.error || "Unknown error")).css("color", "red");
+                new PNotify({
+                    title: "SMB Backup",
+                    text: resp.error || "Connection test failed.",
+                    type: "error",
+                    hide: true
+                });
             }
         }).fail(function(xhr) {
-            $result.text("Failed: " + xhr.statusText).css("color", "red");
+            console.log("[SMBBackup] Test connection failed:", xhr);
+            new PNotify({
+                title: "SMB Backup",
+                text: "Connection test failed: " + xhr.statusText,
+                type: "error",
+                hide: true
+            });
         }).always(function() {
             $btn.prop("disabled", false);
         });
     });
+    
+    $("#smb-download-all-backups").click(function() {
+        console.log("[SMBBackup] Download all backups button clicked");
+        var $btn = $(this);
+        $btn.prop("disabled", true);
+        $.ajax({
+            url: "/api/plugin/sambabackup",
+            type: "POST",
+            dataType: "json",
+            data: JSON.stringify({command: "download_all_backups"}),
+            contentType: "application/json; charset=UTF-8"
+        }).done(function(resp) {
+            console.log("[SMBBackup] Download all backups response:", resp);
+            if (resp.result && resp.url) {
+                window.open(resp.url, '_blank');
+            } else {
+                new PNotify({
+                    title: "SMB Backup",
+                    text: resp.error || "Download failed.",
+                    type: "error",
+                    hide: true
+                });
+            }
+        }).fail(function(xhr) {
+            console.log("[SMBBackup] Download all backups failed:", xhr);
+            new PNotify({
+                title: "SMB Backup",
+                text: "Download failed: " + xhr.statusText,
+                type: "error",
+                hide: true
+            });
+        }).always(function() {
+            $btn.prop("disabled", false);
+        });
+    });
+    
+    // Listen for plugin messages and show notifications
+    if (window.OctoPrint && window.OctoPrint.socket) {
+        window.OctoPrint.socket.onMessage("plugin_sambabackup", function(message) {
+            console.log("[SMBBackup] Plugin message received:", message);
+            if (message && message.type && message.msg) {
+                new PNotify({
+                    title: "SMB Backup",
+                    text: message.msg,
+                    type: message.type,
+                    hide: true
+                });
+            }
+        });
+    }
 });
 </script>
